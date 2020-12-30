@@ -10,6 +10,9 @@ import { ExecutionState } from 'core/state';
 import { FilterModelService, ISortFilter } from 'core/filterModel';
 import { Registry } from 'core/registry';
 
+import { SETTINGS } from 'core/config/settings';
+import { flatten } from 'lodash';
+
 const boundaries = [
   {
     name: 'Today',
@@ -367,5 +370,50 @@ export class ExecutionFilterService {
   public static clearFilters(): void {
     ExecutionState.filterModel.asFilterModel.clearFilters();
     ExecutionState.filterModel.asFilterModel.applyParamsToUrl();
+  }
+
+  public static getRelation() {
+    return flatten(this.getRelations());
+  }
+
+  public static getRelations(): any {
+    const relation = SETTINGS.filterRelations;
+    const relationKeys = Object.keys(relation);
+    const relationVal = Object.values(relation);
+    const relationArr: any = [];
+    if (relationKeys.length) {
+      relationVal.forEach((value, index) => {
+        if (value === null) {
+          let key = index;
+          const rel = [];
+          while (key !== -1) {
+            rel.push(relationKeys[key]);
+            key = relationVal.indexOf(relationKeys[key]);
+          }
+          relationArr.push(rel);
+        }
+      });
+      return relationArr;
+    } else return [];
+  }
+
+  public static filter1(filter: string, group: any) {
+    const sortFilter: ISortFilter = ExecutionState.filterModel.asFilterModel.sortFilter;
+    let show = true;
+    if (this.isFilterable(sortFilter[filter])) {
+      const instanceFilters = FilterModelService.getCheckValues(sortFilter[filter]);
+      if (group.config.filterOn) show = includes(instanceFilters, group.config.filterOn[filter]);
+      else show = false;
+    }
+    return show;
+  }
+
+  public static filterGroups(groups: IExecutionGroup[]): IExecutionGroup[] {
+    const filters: any[] = this.getRelation();
+
+    for (let i = filters.length - 1; i >= 0; i--) {
+      groups = groups.filter((x) => this.filter1(filters[i], x));
+    }
+    return groups;
   }
 }
