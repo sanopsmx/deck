@@ -1,12 +1,18 @@
 import React from 'react';
 import { Subscription } from 'rxjs';
 
+import { IQService, ITimeoutService } from 'angular';
+import { StateService } from '@uirouter/core';
+import { SETTINGS } from '../../../config/settings';
+
 import { Application } from 'core/application/application.model';
 import { ExecutionGroup } from './ExecutionGroup';
-import { IExecutionGroup } from 'core/domain';
+import { IExecution, IExecutionGroup } from 'core/domain';
+import { Observable } from 'rxjs';
 import { ReactInjector } from 'core/reactShims';
 import { ExecutionState } from 'core/state';
 import { ExecutionFilterService } from '../../filter/executionFilter.service';
+import { ExecutionService } from '../../service/execution.service';
 import { BannerContainer } from 'core/banner';
 
 import './executionGroups.less';
@@ -18,6 +24,7 @@ export interface IExecutionGroupsProps {
 export interface IExecutionGroupsState {
   groups: IExecutionGroup[];
   showingDetails: boolean;
+  goToParent: (executionId: string, name: string) => void;
   container?: HTMLDivElement; // need to pass the container down to children to use as root for IntersectionObserver
 }
 
@@ -25,11 +32,29 @@ export class ExecutionGroups extends React.Component<IExecutionGroupsProps, IExe
   private applicationRefreshUnsubscribe: () => void;
   private groupsUpdatedSubscription: Subscription;
   private stateChangeSuccessSubscription: Subscription;
+  private executionService: ExecutionService;
+  private goToParent = (executionId: '', parent: '') => {
+    if (executionId !== '') {
+      const parentElement = document.getElementById('execution-groups-scroll');
+      let destination = document.getElementById('execution-' + executionId);
+      if (destination === null) {
+        destination = document.getElementById(parent);
+        destination.scrollIntoView(true);
+      } else parentElement.scrollTo(0, destination.offsetTop - destination.offsetHeight);
+    }
+  };
 
-  constructor(props: IExecutionGroupsProps) {
+  constructor(
+    props: IExecutionGroupsProps,
+    private $q: IQService,
+    private $state: StateService,
+    private $timeout: ITimeoutService,
+  ) {
     super(props);
     const { stateEvents } = ReactInjector;
+    this.executionService = new ExecutionService(this.$q, this.$state, this.$timeout);
     this.state = {
+      goToParent: this.goToParent,
       groups: ExecutionState.filterModel.asFilterModel.groups,
       showingDetails: ReactInjector.$state.includes('**.execution'),
     };
@@ -85,6 +110,98 @@ export class ExecutionGroups extends React.Component<IExecutionGroupsProps, IExe
     }
   }
 
+  public filterGroups(groups: IExecutionGroup[]) {
+    const filterStages = ExecutionState.filterModel.asFilterModel.sortFilter.filterStages;
+    if (filterStages) {
+      return groups.filter(
+        (group) =>
+          group.executions.filter((execution) => {
+            if (execution.originalStatus == 'RUNNING') {
+              return execution.stages.filter((stage) => stage.type === 'manualJudgment').length > 0;
+            } else return true;
+          }).length,
+      );
+    } else return groups;
+  }
+  public nestedManualJudgment(groups: IExecutionGroup[]) {
+    if (SETTINGS.feature.manualJudgementEnabled) {
+      const nestedObj: any = {};
+      const crossApplicationChildExist: Array<{ parent: string; currentChild: string; child: string }> = [];
+      groups.forEach(({ runningExecutions }) => {
+        if (runningExecutions && runningExecutions.length) {
+          const childPipeline = this.crossApplicationView(runningExecutions);
+          if (childPipeline.length > 0) {
+            crossApplicationChildExist.push(...childPipeline);
+          }
+          const executions = runningExecutions.filter(
+            (exec) =>
+              exec.trigger.parentExecution &&
+              exec.stages.filter((stage) => stage.type == 'manualJudgment' && stage.status === 'RUNNING'),
+          );
+          executions.forEach((execution) => {
+            nestedObj[execution.trigger.parentExecution.id] = nestedObj[execution.trigger.parentExecution.id] ?? [];
+            nestedObj[execution.trigger.parentExecution.id].push({
+              name: execution.name,
+              id: execution.id,
+            });
+          });
+        }
+      });
+      return crossApplicationChildExist.length
+        ? this.crossAppDataFetch(crossApplicationChildExist, nestedObj)
+        : nestedObj;
+    }
+  }
+
+  public crossApplicationView(execution: IExecution[]) {
+    const childAcrossAppliocation: Array<{ parent: string; currentChild: string; child: string }> = [];
+    execution.forEach((exec) =>
+      exec.stages.forEach((stage) => {
+        if (stage.context.application && stage.context.application !== exec.application) {
+          childAcrossAppliocation.push({
+            parent: exec.id,
+            currentChild: stage.context.executionId,
+            child: stage.context.executionId,
+          });
+        }
+      }),
+    );
+    return childAcrossAppliocation;
+  }
+
+  crossAppDataFetch = (executions: Array<{ parent: string; currentChild: string; child: string }>, nestedObj: any) => {
+    const manualJudgementDataObj = nestedObj;
+    executions.forEach((exec) => {
+      const executionContext = this.executionService.getCrossApplicationExecutionContext(exec.child);
+      Observable.fromPromise(executionContext).subscribe((data) => {
+        const nestedpipeline: Array<{ parent: string; currentChild: string; child: string }> = [];
+        if (data.status === 'RUNNING') {
+          data.stages.forEach((stage) => {
+            if (stage.type === 'manualJudgment') {
+              manualJudgementDataObj[exec.parent] = manualJudgementDataObj[exec.parent] ?? [];
+              const leafeNode =
+                exec.child === exec.currentChild
+                  ? { name: data.name, id: exec.child, app: data.application }
+                  : { name: data.name, id: exec.child, currentChild: exec.currentChild, app: data.application };
+              manualJudgementDataObj[exec.parent].push(leafeNode);
+            }
+            if (stage.context.executionId !== undefined) {
+              nestedpipeline.push({
+                parent: exec.parent,
+                currentChild: exec.currentChild,
+                child: stage.context.executionId,
+              });
+            }
+          });
+        }
+        if (nestedpipeline.length > 0) {
+          return this.crossAppDataFetch(nestedpipeline, manualJudgementDataObj);
+        }
+      });
+    });
+    return manualJudgementDataObj;
+  };
+
   public render(): React.ReactElement<ExecutionGroups> {
     const { groups = [], container, showingDetails } = this.state;
     const hasGroups = groups.length > 0;
@@ -94,8 +211,16 @@ export class ExecutionGroups extends React.Component<IExecutionGroupsProps, IExe
       .filter((g: IExecutionGroup) => g.config.migrationStatus === 'STARTED')
       .concat(groups.filter((g) => g.config.migrationStatus !== 'STARTED'));
 
-    const executionGroups = allGroups.map((group: IExecutionGroup) => (
-      <ExecutionGroup parent={container} key={group.heading} group={group} application={this.props.application} />
+    const executionGroups = this.filterGroups(allGroups).map((group: IExecutionGroup) => (
+      <ExecutionGroup
+        parent={container}
+        key={group.heading}
+        group={group}
+        application={this.props.application}
+        id={group.heading}
+        goToParent={this.state.goToParent}
+        manualJudgment={this.nestedManualJudgment(groups)}
+      />
     ));
 
     return (
@@ -106,7 +231,7 @@ export class ExecutionGroups extends React.Component<IExecutionGroupsProps, IExe
               <h4>No executions match the filters you've selected.</h4>
             </div>
           )}
-          <div className="execution-groups all-execution-groups" ref={this.setContainer}>
+          <div className="execution-groups all-execution-groups" ref={this.setContainer} id="execution-groups-scroll">
             <BannerContainer app={this.props.application} />
             {container && executionGroups}
           </div>
