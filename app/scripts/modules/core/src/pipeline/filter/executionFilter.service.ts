@@ -380,10 +380,10 @@ export class ExecutionFilterService {
     const relation = SETTINGS.filterRelations;
     const relationKeys = Object.keys(relation);
     const relationVal = Object.values(relation);
-    const relationArr: any = [];
+    const relationArr: string[][] = [];
     if (relationKeys.length) {
       relationVal.forEach((value, index) => {
-        if (value === null) {
+        if (value === null || undefined) {
           let key = index;
           const rel = [];
           while (key !== -1) {
@@ -397,22 +397,20 @@ export class ExecutionFilterService {
     } else return [];
   }
 
-  public static filter1(filter: string, group: any) {
+  public static shouldShowFilter(filter: string, group: any) {
     const sortFilter: ISortFilter = ExecutionState.filterModel.asFilterModel.sortFilter;
-    let show = true;
     if (this.isFilterable(sortFilter[filter])) {
       const instanceFilters = FilterModelService.getCheckValues(sortFilter[filter]);
-      if (group.config.filterOn) show = includes(instanceFilters, group.config.filterOn[filter]);
-      else show = false;
+      return group.config.customFilters ? includes(instanceFilters, group.config.customFilters[filter]) : false;
     }
-    return show;
+    return true;
   }
 
   public static filterGroups(groups: IExecutionGroup[]): IExecutionGroup[] {
     const filters: any[] = this.getRelation();
 
     for (let i = filters.length - 1; i >= 0; i--) {
-      groups = groups.filter((x) => this.filter1(filters[i], x));
+      groups = groups.filter((group) => this.shouldShowFilter(filters[i], group));
     }
     return groups;
   }

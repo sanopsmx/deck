@@ -29,7 +29,7 @@ export interface IExecutionFiltersState {
   pipelineReorderEnabled: boolean;
   searchString: string;
   tags: IFilterTag[];
-  Filters: any;
+  filters: any;
 }
 
 const DragHandle = SortableHandle(() => (
@@ -54,7 +54,7 @@ export class ExecutionFilters extends React.Component<IExecutionFiltersProps, IE
       pipelineReorderEnabled: false,
       searchString,
       tags: ExecutionState.filterModel.asFilterModel.tags,
-      Filters: {},
+      filters: {},
     };
   }
 
@@ -79,7 +79,7 @@ export class ExecutionFilters extends React.Component<IExecutionFiltersProps, IE
   }
   componentDidUpdate(_prevProps: IExecutionFiltersProps, prevState: IExecutionFiltersState) {
     if (this.state.tags !== prevState.tags) {
-      this.getFalconFilters();
+      this.getCustomExecutionFilters();
     }
   }
 
@@ -106,48 +106,48 @@ export class ExecutionFilters extends React.Component<IExecutionFiltersProps, IE
       ExecutionFilterService.updateExecutionGroups(this.props.application);
       this.props.setReloadingForFilters(false);
     });
-    this.getFalconFilters();
+    this.getCustomExecutionFilters();
   };
-  private getFalconFilters = (): any => {
+  private getCustomExecutionFilters = (): any => {
     const { application } = this.props;
     const sortFilter = ExecutionState.filterModel.asFilterModel.sortFilter;
     if (application.pipelineConfigs.loadFailure) {
       return [];
     }
-    const configs = get(application, `pipelineConfigs.data`, []);
-    // let filterOn = configs.map(config => config.filterOn).filter(x => x);
-    const app = configs.map((config) => config.filterOn).filter((x) => x);
-    if (!app.length) return null;
+    let configs = get(application, `pipelineConfigs.data`, []);
+    configs = configs.map((config) => config.customFilters).filter((element) => element);
+    if (!configs.length) return null;
 
     const customFilters = ExecutionFilterService.getRelations();
 
     const FILTER_PARAMS: any = {};
     const Filters: any = {};
 
-    flatten(customFilters).forEach((x: any) => {
-      FILTER_PARAMS[x] = Object.keys(sortFilter[x]);
-      Filters[x] = {};
+    flatten(customFilters).forEach((filter: any) => {
+      FILTER_PARAMS[filter] = Object.keys(sortFilter[filter]);
+      Filters[filter] = {};
     });
 
     customFilters.forEach((filters: string[]) => {
-      let filterOn = app;
-      filters.forEach((x, index) => {
+      let filterOn = configs;
+      filters.forEach((filter, index) => {
         if (index > 0) {
-          if (FILTER_PARAMS[filters[index - 1]].length > 0) {
-            filterOn = filterOn.filter((filterOn) =>
-              FILTER_PARAMS[filters[index - 1]].includes(filterOn[filters[index - 1]]),
-            );
+          const prevFilter = filters[index - 1];
+          const filterParams = FILTER_PARAMS[prevFilter];
+          if (filterParams.length > 0) {
+            filterOn = filterOn.filter((filterOn) => filterParams.includes(filterOn[prevFilter]));
           }
         }
-        filterOn.map((y) => {
-          if (y[x]) Filters[x][y[x]] = FILTER_PARAMS[x].includes(y[x]);
+        filterOn.map((customFilter) => {
+          if (customFilter[filter])
+            Filters[filter][customFilter[filter]] = FILTER_PARAMS[filter].includes(customFilter[filter]);
         });
       });
     });
 
     this.setState({
       ...this.state,
-      Filters,
+      filters: Filters,
     });
   };
 
@@ -322,13 +322,13 @@ export class ExecutionFilters extends React.Component<IExecutionFiltersProps, IE
               </div>
             </FilterSection>
 
-            {Object.keys(this.state.Filters).map((x, index) => {
+            {Object.keys(this.state.filters).map((x, index) => {
               return (
                 <FilterSection key={index} heading={x.replace('_', ' ').toUpperCase()} expanded={true}>
                   <div className="form">
                     <Types
                       filterSectionName={x}
-                      filters={this.state.Filters[x]}
+                      filters={this.state.filters[x]}
                       update={this.refreshExecutions}
                       tags={this.state.tags}
                     />
