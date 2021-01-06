@@ -10,6 +10,9 @@ import { ExecutionState } from 'core/state';
 import { FilterModelService, ISortFilter } from 'core/filterModel';
 import { Registry } from 'core/registry';
 
+import { SETTINGS } from 'core/config/settings';
+import { flatten } from 'lodash';
+
 const boundaries = [
   {
     name: 'Today',
@@ -368,5 +371,64 @@ export class ExecutionFilterService {
     ExecutionState.filterModel.asFilterModel.sortFilter.filterStages = false;
     ExecutionState.filterModel.asFilterModel.clearFilters();
     ExecutionState.filterModel.asFilterModel.applyParamsToUrl();
+  }
+
+  public static getRelation() {
+    return flatten(this.getRelations());
+  }
+
+  public static getRelations(): any {
+    const relation = SETTINGS.filterRelations;
+    const relationKeys = Object.keys(relation);
+    const relationVal = Object.values(relation);
+    const relationArr: string[][] = [];
+    if (relationKeys.length) {
+      relationVal.forEach((value, index) => {
+        if (value === null || undefined) {
+          let key = index;
+          const rel = [];
+          while (key !== -1) {
+            rel.push(relationKeys[key]);
+            key = relationVal.indexOf(relationKeys[key]);
+          }
+          relationArr.push(rel);
+        }
+      });
+      return relationArr;
+    } else return [];
+  }
+
+  public static shouldShowFilter(filter: string, group: any) {
+    const sortFilter: ISortFilter = ExecutionState.filterModel.asFilterModel.sortFilter;
+    if (this.isFilterable(sortFilter[filter])) {
+      const instanceFilters = FilterModelService.getCheckValues(sortFilter[filter]);
+      return group.config.customFilters ? includes(instanceFilters, group.config.customFilters[filter]) : false;
+    }
+    return true;
+  }
+
+  public static filterGroups(groups: IExecutionGroup[]): IExecutionGroup[] {
+    const filters: any[] = this.getRelation();
+
+    groups = this.awaitingJudgment(groups);
+
+    for (let i = filters.length - 1; i >= 0; i--) {
+      groups = groups.filter((group) => this.shouldShowFilter(filters[i], group));
+    }
+    return groups;
+  }
+
+  public static awaitingJudgment(groups: IExecutionGroup[]) {
+    const filterStages = ExecutionState.filterModel.asFilterModel.sortFilter.filterStages;
+    if (filterStages) {
+      return groups.filter(
+        (group) =>
+          group.executions.filter((execution) => {
+            if (execution.originalStatus == 'RUNNING') {
+              return execution.stages.filter((stage) => stage.type === 'manualJudgment').length > 0;
+            } else return true;
+          }).length,
+      );
+    } else return groups;
   }
 }

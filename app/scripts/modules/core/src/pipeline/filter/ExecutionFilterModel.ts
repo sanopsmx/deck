@@ -13,6 +13,12 @@ export const filterModelConfig: IFilterConfig[] = [
   { model: 'pipeline', param: 'pipeline', type: 'trueKeyObject', clearValue: {} },
   { model: 'status', type: 'trueKeyObject', clearValue: {} },
   { model: 'stages', type: 'trueKeyObject', clearValue: {} },
+  ...Object.keys(SETTINGS.filterRelations ? SETTINGS.filterRelations : {}).map((x: string) => ({
+    model: x,
+    param: x,
+    type: 'trueKeyObject',
+    clearValue: {},
+  })),
 ];
 
 const GLOBAL_CACHE_KEY = '#global';

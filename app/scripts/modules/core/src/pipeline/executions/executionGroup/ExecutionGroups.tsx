@@ -110,19 +110,6 @@ export class ExecutionGroups extends React.Component<IExecutionGroupsProps, IExe
     }
   }
 
-  public filterGroups(groups: IExecutionGroup[]) {
-    const filterStages = ExecutionState.filterModel.asFilterModel.sortFilter.filterStages;
-    if (filterStages) {
-      return groups.filter(
-        (group) =>
-          group.executions.filter((execution) => {
-            if (execution.originalStatus == 'RUNNING') {
-              return execution.stages.filter((stage) => stage.type === 'manualJudgment').length > 0;
-            } else return true;
-          }).length,
-      );
-    } else return groups;
-  }
   public nestedManualJudgment(groups: IExecutionGroup[]) {
     if (SETTINGS.feature.manualJudgementEnabled) {
       const nestedObj: any = {};
@@ -211,7 +198,7 @@ export class ExecutionGroups extends React.Component<IExecutionGroupsProps, IExe
       .filter((g: IExecutionGroup) => g.config.migrationStatus === 'STARTED')
       .concat(groups.filter((g) => g.config.migrationStatus !== 'STARTED'));
 
-    const executionGroups = this.filterGroups(allGroups).map((group: IExecutionGroup) => (
+    const executionGroups = ExecutionFilterService.filterGroups(allGroups).map((group: IExecutionGroup) => (
       <ExecutionGroup
         parent={container}
         key={group.heading}
