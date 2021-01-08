@@ -258,7 +258,7 @@ export class ExecutionGroup extends React.PureComponent<IExecutionGroupProps, IE
     const { group, goToParent } = this.props;
     const { displayExecutionActions, pipelineConfig, triggeringExecution, showingDetails } = this.state;
     const pipelineDisabled = pipelineConfig && pipelineConfig.disabled;
-    const pipelineJustMigrated = pipelineConfig?.migrationStatus === 'STARTED';
+    const pipelineJustMigrated = pipelineConfig?.migrationStatus === 'Started';
     const pipelineDescription = pipelineConfig && pipelineConfig.description;
     const hasRunningExecutions = group.runningExecutions && group.runningExecutions.length > 0;
 
